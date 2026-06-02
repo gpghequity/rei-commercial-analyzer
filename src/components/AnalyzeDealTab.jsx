@@ -321,7 +321,6 @@ const DEEP_COMPONENT = {
 // Human-readable engine route for the status line. Confidence/debug only — it
 // never changes any math; it just names which Bible engine is running.
 function engineRoute(typeId) {
-  if (typeId === 'portfolio') return 'Portfolio · per-building + pooled NOI through the income financing matrix'
   if (typeId === 'ios_land') return 'Land / IOS · land.js supported-intake (no offer engine)'
   if (isIncomeAsset(typeId)) return `${getType(typeId)?.label || typeId} · income financing matrix (incomeMatrix.js) + docs/photos/comps`
   if (typeId === 'residential') return 'Residential · /api/calc residential_mao / residential_dscr + docs/photos/comps'
@@ -331,12 +330,12 @@ function engineRoute(typeId) {
 }
 
 // Always-visible status line — tells the operator exactly which engine is running.
-function StatusLine({ typeId }) {
-  const t = getType(typeId) || { label: 'Portfolio (multiple buildings)' }
+function StatusLine({ typeId, portfolio }) {
+  const t = getType(typeId)
   return (
     <div className="no-print" style={{ marginTop: 16, padding: '8px 12px', background: '#0A0F2C', color: '#cdd6ec', borderRadius: 8, fontSize: 12, lineHeight: 1.6 }}>
-      <b style={{ color: '#C9A84C' }}>Engine status</b> · Deal type: <b style={{ color: '#fff' }}>{t?.label || typeId}</b>
-      {' · '}Route: <span style={{ color: '#fff' }}>{engineRoute(typeId)}</span>
+      <b style={{ color: '#C9A84C' }}>Engine status</b> · Deal type: <b style={{ color: '#fff' }}>{t?.label || typeId}{portfolio ? ' (Portfolio)' : ''}</b>
+      {' · '}Route: <span style={{ color: '#fff' }}>{portfolio ? 'Portfolio — per-building + pooled through this type’s engine' : engineRoute(typeId)}</span>
       {' · '}Math Bible v3.1 · App v{VERSION}
     </div>
   )
@@ -346,6 +345,7 @@ export default function AnalyzeDealTab({ sharedUrlState, deepUrlState }) {
   const [typeId, setTypeId] = useState('residential')
   const [mode, setMode] = useState('flip')
   const [advancedOpen, setAdvancedOpen] = useState(false)
+  const [portfolio, setPortfolio] = useState(false)
   const [rehabCondition, setRehabCondition] = useState(0) // manual condition → rehab $ (your numbers)
   const [rehabDetail, setRehabDetail] = useState(null)    // { national: {area, psf, tier, total}, ... }
   const [fields, setFields] = useState({ address: '', city: '', state: '', zip: '' })
@@ -356,8 +356,8 @@ export default function AnalyzeDealTab({ sharedUrlState, deepUrlState }) {
   const [error, setError] = useState(null)
   const [result, setResult] = useState(null)
 
-  const isPortfolio = typeId === 'portfolio'
-  const type = getType(typeId) || { label: 'Portfolio', fields: [], implemented: true }
+  const type = getType(typeId)
+  const isPortfolio = portfolio && typeId !== 'ios_land'
   const deep = DEEP_COMPONENT[typeId]
   const DeepComp = deep?.Comp
   // Land has NO guided offer engine — its dedicated intake IS the main screen.
@@ -593,8 +593,13 @@ export default function AnalyzeDealTab({ sharedUrlState, deepUrlState }) {
         <h3 style={h3}>1 · Property Type</h3>
         <select aria-label="Property type" style={inp} value={typeId} onChange={e => { setTypeId(e.target.value); const t = getType(e.target.value); if (t.subModes) setMode(t.subModes[0].id) }}>
           {PROPERTY_TYPES.map(t => <option key={t.id} value={t.id}>{t.label}</option>)}
-          <option value="portfolio">Portfolio (multiple buildings, same type)</option>
         </select>
+        {!isLand && (
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10, fontSize: 13, fontWeight: 600, color: '#1E2A45', cursor: 'pointer' }}>
+            <input type="checkbox" checked={portfolio} onChange={e => setPortfolio(e.target.checked)} />
+            Portfolio — analyze multiple buildings of this type on one sheet
+          </label>
+        )}
         {/* Flip / Rental etc. submodes (guided screen only). */}
         {type.subModes && !isLand && (
           <div style={{ marginTop: 8, display: 'flex', gap: 8 }}>
@@ -611,7 +616,7 @@ export default function AnalyzeDealTab({ sharedUrlState, deepUrlState }) {
       </div>
 
       {isPortfolio ? (
-        <PortfolioSection />
+        <PortfolioSection assetType={typeId} />
       ) : isLand ? (
         // Land has no guided offer engine — the dedicated land intake IS the screen.
         <div className="no-print">
@@ -693,7 +698,7 @@ export default function AnalyzeDealTab({ sharedUrlState, deepUrlState }) {
       )}
       </>)}
 
-      <StatusLine typeId={typeId} />
+      <StatusLine typeId={typeId} portfolio={isPortfolio} />
     </div>
   )
 }
