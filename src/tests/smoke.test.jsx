@@ -2,6 +2,7 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, it, expect } from 'vitest'
 import App from '../App.jsx'
+import { VERSION } from '../version.js'
 
 // Single-path UI contract: top nav = "Analyze a Deal" + "QA Runner" only. Inside
 // Analyze a Deal, ONE guided analyzer per type is the main screen (questions +
@@ -65,7 +66,7 @@ describe('App skeleton — one analyzer path', () => {
   it('shows the engine status line', () => {
     render(<App />)
     expect(screen.getByText(/Engine status/i)).toBeInTheDocument()
-    expect(screen.getByText(/App v0\.9\.2/i)).toBeInTheDocument()
+    expect(screen.getByText(new RegExp(`App v${VERSION.replace(/\./g, '\\.')}`, 'i'))).toBeInTheDocument()
   })
 
   it('QA Runner tab loads without crashing', async () => {

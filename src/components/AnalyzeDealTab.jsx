@@ -16,9 +16,22 @@ import RehabSection from './analyze/RehabSection.jsx'
 import PortfolioSection from './analyze/PortfolioSection.jsx'
 import { NATIONAL_PSF, REGIONAL_ADJ, toBenchmarkTier } from '../math/rehab/rehabSystems.js'
 
-// Which types get the embedded condition→rehab calculator, and which Rehab Calc
-// system set they use. Residential rehab feeds the flip MAO.
-const REHAB_MODE = { residential: 'residential', self_storage: 'storage', commercial: 'commercial' }
+// Which Rehab Calc system set each property type uses. EVERY type shows the
+// embedded condition→rehab questions (per Steve) — residential rehab feeds the
+// flip MAO; on every other type/mode it's captured as an output but does not
+// alter the income/DSCR math. Anything unmapped falls back to the residential set.
+const REHAB_MODE = {
+  residential: 'residential',
+  multifamily_small: 'residential',
+  multifamily_large: 'residential',
+  mhp_rv: 'residential',
+  rv_park: 'residential',
+  self_storage: 'storage',
+  ios: 'storage',
+  commercial: 'commercial',
+  mixed_use: 'commercial',
+  ios_land: 'commercial'
+}
 
 // ── formatting ──
 const money = (v) => (v == null || v === '' || !Number.isFinite(Number(v)))
@@ -120,7 +133,7 @@ function headline(calcType, result) {
 }
 
 // Transparent recommendation rule (presentation layer — not bible math).
-function recommend({ asking, maxOffer, estValue, dscrPass, typeImplemented, hasMath, isIncome }) {
+function recommend({ asking, maxOffer, estValue, dscrPass, typeImplemented, hasMath, isIncome, compSeeded, seedNote }) {
   // Distinguish "no engine for this type" from "engine exists but we lack inputs".
   if (!typeImplemented) {
     return { verdict: 'INTAKE ONLY', basis: 'No analysis engine exists for this property type yet — data captured and saved.' }
@@ -133,6 +146,12 @@ function recommend({ asking, maxOffer, estValue, dscrPass, typeImplemented, hasM
   const ask = num(asking)
   const offer = num(maxOffer) || num(estValue)
   if (!offer) return { verdict: 'REVIEW', basis: 'Not enough inputs to compute an offer; review captured data.' }
+  // Comp-seeded from an address alone — a ballpark, NOT a verified offer. Never
+  // promote to PURSUE/NEGOTIATE; the operator must confirm ARV/rehab (or rent).
+  if (compSeeded) {
+    const askBit = ask ? `Seller asking ${money(ask)}. ` : ''
+    return { verdict: 'PRELIMINARY', basis: `Ballpark only — ${money(offer)} computed from comp data (${seedNote}). ${askBit}This is NOT an offer: confirm ARV and rehab (or rent) before relying on it.` }
+  }
   if (!ask) return { verdict: 'REVIEW', basis: `Computed offer ${money(offer)}; enter seller asking to compare.` }
   // Thresholds: at/below offer = PURSUE (more spread the lower it is); up to 25% over = NEGOTIATE; beyond = WARNING.
   if (ask <= offer) return { verdict: 'PURSUE', basis: `Asking ${money(ask)} is at/below the max recommended offer ${money(offer)} — the lower the ask, the more spread.` }
@@ -380,8 +399,8 @@ export default function AnalyzeDealTab({ sharedUrlState, deepUrlState }) {
   const activeFields = (type.fields || []).filter(f => !f.modes || f.modes.includes(mode))
   const set = (k, v) => setFields(p => ({ ...p, [k]: v }))
   // Embedded condition→rehab calculator: residential (flip), storage, commercial.
-  const rehabMode = REHAB_MODE[typeId]
-  const showRehab = Boolean(rehabMode) && (typeId !== 'residential' || mode === 'flip')
+  const rehabMode = REHAB_MODE[typeId] || 'residential'
+  const showRehab = true // every property type & mode shows the rehab questions (per Steve)
   const rehabSeed = typeId === 'residential'
     ? { units: num(fields.units) || 1, sqFtPerUnit: (num(fields.sqft) && num(fields.units)) ? Math.round(num(fields.sqft) / num(fields.units)) : (num(fields.sqft) || ''), commonSqFt: 0, stories: num(fields.stories) || 1 }
     : typeId === 'self_storage'
@@ -435,6 +454,31 @@ export default function AnalyzeDealTab({ sharedUrlState, deepUrlState }) {
         if (!num(calcFields.grossIncome) && extractedNorm.grossIncome) calcFields.grossIncome = extractedNorm.grossIncome
         if (!num(calcFields.askingPrice) && extractedNorm.asking) calcFields.askingPrice = extractedNorm.asking
       }
+      // Comp-seed: with only an address (no ARV / rent typed), seed the offer math
+      // from the comp AVM so the operator still gets a PRELIMINARY ballpark instead
+      // of a dead "REVIEW". Clearly flagged downstream — never promoted to a real
+      // PURSUE/NEGOTIATE verdict, and rehab is assumed $0 until the operator confirms.
+      const avm = orch.comps?.avm || null
+      const compSeed = { arv: false, rent: false, purchase: false }
+      if (avm && typeId === 'residential' && !isIncomeAsset(typeId)) {
+        if (mode === 'flip' && !num(calcFields.arv) && num(avm.value) > 0) {
+          calcFields.arv = avm.value; compSeed.arv = true
+        }
+        if (mode === 'rental') {
+          if (!num(calcFields.grossIncome) && num(avm.rent_estimate) > 0) {
+            calcFields.grossIncome = Math.round(num(avm.rent_estimate) * 12); compSeed.rent = true
+          }
+          if (!num(calcFields.purchase) && !num(calcFields.askingPrice) && num(avm.value) > 0) {
+            calcFields.purchase = avm.value; compSeed.purchase = true
+          }
+        }
+      }
+      const seedBits = []
+      if (compSeed.arv) seedBits.push(`ARV seeded from ${avm.source || 'AVM'} ${money(avm.value)}, rehab assumed $0`)
+      if (compSeed.rent) seedBits.push(`rent seeded from ${avm.source || 'AVM'} ${money(avm.rent_estimate)}/mo`)
+      if (compSeed.purchase) seedBits.push(`purchase seeded from AVM ${money(avm.value)}`)
+      const compSeeded = seedBits.length > 0
+      const seedNote = seedBits.join('; ')
       // Condition-based rehab (from the embedded Rehab Calc) feeds the flip MAO when
       // the operator didn't type a manual rehab number.
       if (showRehab && !num(calcFields.rehab) && rehabCondition > 0) calcFields.rehab = rehabCondition
@@ -511,7 +555,7 @@ export default function AnalyzeDealTab({ sharedUrlState, deepUrlState }) {
       const rec = recommend({
         asking: calcFields.askingPrice, maxOffer: head.maxOffer, estValue: head.estValue,
         dscrPass: head.dscrPass, typeImplemented: type.implemented, hasMath,
-        isIncome: isIncomeAsset(typeId)
+        isIncome: isIncomeAsset(typeId), compSeeded, seedNote
       })
 
       // 4) Broker vs calculated NOI.
@@ -546,7 +590,7 @@ export default function AnalyzeDealTab({ sharedUrlState, deepUrlState }) {
         extracted: extractedNorm, extractedRaw: orch.extracted, extractorError,
         comps: orch.comps, photos: orch.photos, photoRes,
         calc, calcTypeUsed, headline: head, matrix, noiBasis,
-        recommendation: rec,
+        recommendation: rec, compSeeded, seedNote,
         brokerNOI, calcNOI, noiDelta,
         // Rehab grid: human/manual condition vs photo-read (pic-rehab), each priced
         // your-numbers AND national-average.
@@ -720,7 +764,7 @@ function Results({ r }) {
   const ex = r.extracted
   const comps = r.comps
   const ph = r.photoRes
-  const vColor = { PURSUE: '#2F7A40', NEGOTIATE: '#C8851A', WARNING: '#B23030', PASS: '#2F7A40', 'INTAKE ONLY': '#6b7280', 'NEEDS INCOME': '#C8851A', REVIEW: '#1E2A45' }[r.recommendation.verdict] || '#1E2A45'
+  const vColor = { PURSUE: '#2F7A40', NEGOTIATE: '#C8851A', WARNING: '#B23030', PASS: '#2F7A40', 'INTAKE ONLY': '#6b7280', 'NEEDS INCOME': '#C8851A', PRELIMINARY: '#5B3FA6', REVIEW: '#1E2A45' }[r.recommendation.verdict] || '#1E2A45'
 
   return (
     <div>
@@ -732,8 +776,8 @@ function Results({ r }) {
         {!r.matrix && (
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 8 }}>
             <Val label="Seller Asking" value={money(r.inputs.askingPrice || ex?.asking)} source={r.inputs.askingPrice ? 'User input' : (ex?.asking ? 'Extracted document' : 'n/a')} />
-            <Val label="Estimated Value / Max Purchase" value={money(r.headline.estValue)} source="Baby Analyzer (bible math)" />
-            <Val label="Max Recommended Offer" value={money(r.headline.maxOffer)} source="Baby Analyzer calculation" />
+            <Val label="Estimated Value / Max Purchase" value={money(r.headline.estValue)} source={r.compSeeded ? 'Comp-seeded (preliminary) — bible math' : 'Baby Analyzer (bible math)'} />
+            <Val label="Max Recommended Offer" value={money(r.headline.maxOffer)} source={r.compSeeded ? 'PRELIMINARY — comp-seeded, confirm ARV/rehab' : 'Baby Analyzer calculation'} />
             <Val label="DSCR" value={r.headline.dscr != null ? Number(r.headline.dscr).toFixed(2) : '—'} source="Baby Analyzer calculation" />
           </div>
         )}
