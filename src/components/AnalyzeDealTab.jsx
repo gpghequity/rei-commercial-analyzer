@@ -692,6 +692,61 @@ export default function AnalyzeDealTab({ sharedUrlState, deepUrlState }) {
 
       const extractedNorm = pullExtracted(orch.extracted)
 
+      // Auto-detect asset type from extracted data and set typeId.
+      // Matches extractor asset_type to Baby Analyzer PROPERTY_TYPES.
+      if (extractedNorm && extractedNorm.assetType) {
+        const detected = String(extractedNorm.assetType).toLowerCase().trim()
+        // Check for mixed-use indicators first
+        const multipleAssets = (
+          (detected.includes('storage') && detected.includes('residential')) ||
+          (detected.includes('storage') && detected.includes('commercial')) ||
+          (detected.includes('commercial') && detected.includes('residential')) ||
+          (detected.includes('mhp') && detected.includes('retail')) ||
+          detected.includes('mixed') ||
+          detected.includes('blend')
+        )
+        if (multipleAssets) {
+          setTypeId('mixed_use')
+        } else {
+          // Single-asset mapping
+          const mapping = {
+            'residential': 'residential',
+            'single family': 'residential',
+            'single-family': 'residential',
+            'sf': 'residential',
+            'storage': 'self_storage',
+            'self storage': 'self_storage',
+            'self-storage': 'self_storage',
+            'selfstorage': 'self_storage',
+            'multifamily': 'multifamily_small', // default to small; refined by unit count if available
+            'mf': 'multifamily_small',
+            'apartment': 'multifamily_small',
+            'commercial': 'commercial',
+            'retail': 'commercial',
+            'office': 'commercial',
+            'warehouse': 'commercial',
+            'mhp': 'mhp_rv',
+            'mobile home park': 'mhp_rv',
+            'mobile-home-park': 'mhp_rv',
+            'rv park': 'rv_park',
+            'rv-park': 'rv_park',
+            'rvpark': 'rv_park',
+            'ios': 'ios',
+            'industrial outdoor storage': 'ios',
+            'land': 'ios_land'
+          }
+          const matched = mapping[detected] || null
+          if (matched) {
+            setTypeId(matched)
+            // For multifamily, refine based on unit count
+            if (matched === 'multifamily_small' && extractedNorm.units) {
+              const units = num(extractedNorm.units)
+              if (units >= 20) setTypeId('multifamily_large')
+            }
+          }
+        }
+      }
+
       // Surface a real extractor failure (e.g. doc-reader Claude key invalid → 401)
       // instead of silently showing blank fields. This is the difference between
       // "the document had nothing" and "the extractor service is down".
