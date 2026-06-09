@@ -12,7 +12,22 @@
 
 import { getSheets } from './googleClients.js';
 
-const PROPERTIES_TAB = 'Properties';
+// Route to asset-type-specific tab. Fallback to Properties if unmapped.
+function getTabForAssetType(assetType) {
+  const mapping = {
+    'self_storage': 'Storage',
+    'ios': 'Storage',
+    'residential': 'Residential',
+    'multifamily_small': 'Multifamily',
+    'multifamily_large': 'Multifamily',
+    'mhp_rv': 'MHP',
+    'rv_park': 'MHP',
+    'commercial': 'Commercial',
+    'mixed_use': 'Mixed Use',
+    'ios_land': 'Land'
+  };
+  return mapping[String(assetType || '').toLowerCase()] || 'Properties';
+}
 
 const COLS = [
   'property_id', 'version', 'is_current', 'edited_on', 'edited_by', 'edit_reason',
@@ -45,12 +60,12 @@ function colLetter(n) {
   return s;
 }
 
-async function readAllRows(sheets) {
+async function readAllRows(sheets, tabName = 'Properties') {
   const id = process.env.GOOGLE_SHEETS_ID;
   if (!id) return { error: 'GOOGLE_SHEETS_ID not set' };
   try {
     const res = await sheets.spreadsheets.values.get({
-      spreadsheetId: id, range: `'${PROPERTIES_TAB}'!A:ZZ`
+      spreadsheetId: id, range: `'${tabName}'!A:ZZ`
     });
     return { rows: res.data.values || [] };
   } catch (e) { return { error: e?.message || 'read failed' }; }
@@ -77,13 +92,13 @@ function findByAddress(rows, address) {
   return { propertyId, maxVersion, current };
 }
 
-async function setIsCurrent(sheets, sheetRowIndex, value) {
+async function setIsCurrent(sheets, sheetRowIndex, value, tabName = 'Properties') {
   const id = process.env.GOOGLE_SHEETS_ID;
   const letter = colLetter(COLS.indexOf('is_current'));
   try {
     await sheets.spreadsheets.values.update({
       spreadsheetId: id,
-      range: `'${PROPERTIES_TAB}'!${letter}${sheetRowIndex}`,
+      range: `'${tabName}'!${letter}${sheetRowIndex}`,
       valueInputOption: 'RAW',
       requestBody: { values: [[value ? 'TRUE' : 'FALSE']] }
     });
@@ -91,12 +106,12 @@ async function setIsCurrent(sheets, sheetRowIndex, value) {
   } catch (e) { return { ok: false, error: e?.message || 'set is_current failed' }; }
 }
 
-async function appendRow(sheets, rowValues) {
+async function appendRow(sheets, rowValues, tabName = 'Properties') {
   const id = process.env.GOOGLE_SHEETS_ID;
   try {
     await sheets.spreadsheets.values.append({
       spreadsheetId: id,
-      range: `'${PROPERTIES_TAB}'!A:ZZ`,
+      range: `'${tabName}'!A:ZZ`,
       valueInputOption: 'USER_ENTERED',
       requestBody: { values: [rowValues] }
     });
@@ -112,7 +127,7 @@ function buildRowFromObject(data) {
   });
 }
 
-// Write a Baby Analyzer deal onto the shared Properties tab.
+// Write a Baby Analyzer deal onto an asset-type-specific tab.
 // `property` is an object keyed by COLS names. Returns { ok, property_id, version } or { ok:false, error }.
 export async function writeProperty({ property, editedBy, editReason }) {
   if (!property || !property.address) return { ok: false, error: 'address required' };
@@ -120,7 +135,10 @@ export async function writeProperty({ property, editedBy, editReason }) {
   if (r.error) return { ok: false, error: r.error };
   const sheets = r.sheets;
 
-  const all = await readAllRows(sheets);
+  // Route to asset-type-specific tab
+  const tabName = getTabForAssetType(property.asset_type);
+
+  const all = await readAllRows(sheets, tabName);
   if (all.error) return { ok: false, error: all.error };
   const existing = findByAddress(all.rows, property.address);
 
@@ -142,7 +160,7 @@ export async function writeProperty({ property, editedBy, editReason }) {
   }
 
   if (existing.current) {
-    const demote = await setIsCurrent(sheets, existing.current.sheetRowIndex, false);
+    const demote = await setIsCurrent(sheets, existing.current.sheetRowIndex, false, tabName);
     if (!demote.ok) return { ok: false, error: 'demote: ' + demote.error };
   }
 
@@ -155,9 +173,9 @@ export async function writeProperty({ property, editedBy, editReason }) {
   merged.edit_reason = editReason || 'Baby Analyzer analysis';
   merged.last_tool_touch = 'baby-analyzer';
 
-  const append = await appendRow(sheets, buildRowFromObject(merged));
+  const append = await appendRow(sheets, buildRowFromObject(merged), tabName);
   if (!append.ok) {
-    if (existing.current) await setIsCurrent(sheets, existing.current.sheetRowIndex, true).catch(() => {});
+    if (existing.current) await setIsCurrent(sheets, existing.current.sheetRowIndex, true, tabName).catch(() => {});
     return { ok: false, error: append.error };
   }
   return { ok: true, property_id: propertyId, version };
