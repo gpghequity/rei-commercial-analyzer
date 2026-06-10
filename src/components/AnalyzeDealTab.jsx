@@ -959,6 +959,33 @@ export default function AnalyzeDealTab({ sharedUrlState, deepUrlState }) {
       if (!docs.length) missing.push('Financial documents (OM / T12 / rent roll)')
       if (!photos.length) missing.push('Property photos')
 
+      // Data Reconciliation: compare manual vs extracted for all income/asset fields
+      const reconcile = (fieldKey, label) => {
+        const manual = fields[fieldKey]
+        const fromExtract = extractedNorm?.[fieldKey]
+        const numManual = num(manual)
+        const numExtract = num(fromExtract)
+        const used = num(calcFields[fieldKey]) || numManual || numExtract
+        const conflict = numManual > 0 && numExtract > 0 && Math.abs(numManual - numExtract) > (numManual * 0.05) // >5% difference
+        return {
+          field: fieldKey,
+          label,
+          manual: numManual > 0 ? numManual : null,
+          extracted: numExtract > 0 ? numExtract : null,
+          used,
+          source: numManual > 0 ? 'User-entered' : numExtract > 0 ? 'Extracted from document' : 'Not provided',
+          conflict: conflict ? `Manual ${numManual.toLocaleString()} vs Extracted ${numExtract.toLocaleString()}` : null
+        }
+      }
+
+      const dataReconciliation = [
+        reconcile('grossIncome', 'Gross Annual Income'),
+        reconcile('expenses', 'Annual Operating Expenses'),
+        reconcile('noi', 'Net Operating Income'),
+        reconcile('occupancy', 'Physical Occupancy %'),
+        reconcile('askingPrice', 'Seller Asking Price')
+      ]
+
       const report = {
         generatedAt: new Date().toISOString(),
         tool: 'baby-analyzer',
@@ -968,6 +995,7 @@ export default function AnalyzeDealTab({ sharedUrlState, deepUrlState }) {
         implemented: type.implemented && hasMath,
         inputs: fields,
         extracted: extractedNorm, extractedRaw: orch.extracted, extractorError,
+        dataReconciliation,
         comps: orch.comps, photos: orch.photos, photoRes,
         calc, calcTypeUsed, headline: head, matrix, noiBasis,
         recommendation: rec, compSeeded, seedNote,
@@ -1207,6 +1235,54 @@ function Results({ r }) {
           <PracticalRecommendation rec={r.matrix.recommendation} />
           <DetailCards rows={r.matrix.rows} assumptions={r.matrix.assumptions} />
         </>
+      )}
+
+      {/* DATA RECONCILIATION — Manual vs Extracted */}
+      {r.dataReconciliation && r.dataReconciliation.some(d => d.manual || d.extracted) && (
+        <div style={card}>
+          <h3 style={h3}>Data Reconciliation — Manual Entry vs Extracted from Documents</h3>
+          <div style={{ overflowX: 'auto', marginBottom: 12 }}>
+            <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: 600, fontSize: 13 }}>
+              <thead>
+                <tr style={{ background: '#f7f9fd' }}>
+                  <th style={{ padding: '8px 10px', textAlign: 'left', fontWeight: 600, borderBottom: '2px solid #d4dae8' }}>Field</th>
+                  <th style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 600, borderBottom: '2px solid #d4dae8' }}>User-Entered</th>
+                  <th style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 600, borderBottom: '2px solid #d4dae8' }}>From Documents</th>
+                  <th style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 600, borderBottom: '2px solid #d4dae8' }}>Used in Analysis</th>
+                  <th style={{ padding: '8px 10px', textAlign: 'left', fontWeight: 600, borderBottom: '2px solid #d4dae8' }}>Source</th>
+                </tr>
+              </thead>
+              <tbody>
+                {r.dataReconciliation.map((rec, i) => (
+                  <tr key={i} style={{ background: i % 2 ? '#fff' : '#f7f9fd', borderBottom: '1px solid #e5e7eb' }}>
+                    <td style={{ padding: '8px 10px', fontWeight: 600, color: '#0A0F2C' }}>{rec.label}</td>
+                    <td style={{ padding: '8px 10px', textAlign: 'right', color: rec.manual ? '#2F7A40' : '#9ca3af' }}>
+                      {rec.manual ? (typeof rec.manual === 'number' ? rec.manual.toLocaleString() : rec.manual) : '—'}
+                    </td>
+                    <td style={{ padding: '8px 10px', textAlign: 'right', color: rec.extracted ? '#2F7A40' : '#9ca3af' }}>
+                      {rec.extracted ? (typeof rec.extracted === 'number' ? rec.extracted.toLocaleString() : rec.extracted) : '—'}
+                    </td>
+                    <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 600, color: '#0A0F2C' }}>
+                      {rec.used ? (typeof rec.used === 'number' ? rec.used.toLocaleString() : rec.used) : '—'}
+                    </td>
+                    <td style={{ padding: '8px 10px', fontSize: 12, color: rec.conflict ? '#B23030' : '#6b7280' }}>
+                      {rec.conflict ? (
+                        <span style={{ fontWeight: 600, color: '#B23030' }}>⚠ Conflict: {rec.conflict}</span>
+                      ) : (
+                        rec.source
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {r.dataReconciliation.some(d => d.conflict) && (
+            <p style={{ color: '#B23030', fontSize: 12, fontWeight: 600 }}>
+              ⚠ Conflicts detected between user-entered and extracted data. User-entered values take precedence in analysis.
+            </p>
+          )}
+        </div>
       )}
 
       {/* ZONE 1 — RAW EXTRACTED DATA */}
