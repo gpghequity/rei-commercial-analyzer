@@ -38,18 +38,38 @@ export function loadConstants() {
   flat.AMORT_SELLER   = 25                                         // 25-year amortization
   flat.K_SELLER       = annualLoanConstant(flat.RATE_SELLER, flat.AMORT_SELLER)
 
-  // Closing costs and fees (equity requirement line items)
-  flat.WHOLESALE_FEE  = 10000                                      // $10k assignment fee
+  // Closing costs and fees (equity requirement line items) from Math Bible
+  flat.WHOLESALE_FEE  = GLOB.wholesaleFeeAmount || 10000           // $10k assignment fee
+  flat.CLOSING_COSTS  = GLOB.closingCostsFlatAmount || 2000        // $2k flat closing costs
+  flat.TITLE_PCT      = GLOB.titleEscrowRecordingPercent || 0.005  // 0.5% title insurance
+  flat.TRANSFER_TAX_PCT = GLOB.transferTaxPercent || 0.01          // 1% transfer tax
+  flat.APPRAISAL      = 4500                                       // $4.5k appraisal (standard)
+  flat.SURVEY         = 800                                        // $800 survey
+  flat.LEGAL          = 3000                                       // $3k legal cost
+  flat.ENVIRONMENTAL  = 500                                        // $500 environmental inspection
+  flat.INSURANCE_SETUP = 400                                       // $400 insurance setup
   flat.BANK_POINTS_PCT = 0.01                                      // 1% lender points
   flat.BANK_LENDER_FEES = 2500                                     // $2.5k flat lender fee
-  flat.LEGAL          = 3000                                       // $3k legal cost
-  flat.TITLE_PCT      = 0.005                                      // 0.5% title insurance
-  flat.ENVIRONMENTAL  = 500                                        // $500 environmental inspection
-  flat.APPRAISAL      = 600                                        // $600 appraisal
-  flat.SURVEY         = 800                                        // $800 survey
-  flat.INSURANCE_SETUP = 400                                       // $400 insurance setup
   flat.PITI_RESERVE_MONTHS = 3                                     // 3 months PITI/tax reserve
-  flat.WORKING_CAPITAL_PCT = 0.10                                  // 10% working capital reserve
+  flat.WORKING_CAPITAL_PCT = 0.25                                  // 25% working capital reserve (NOT 10%)
+
+  // Residential expense pads (NOI adjustment factors)
+  flat.PAD_LIGHT      = RES.expensePads?.light ?? 0                // 0% light pad
+  flat.PAD_STANDARD   = RES.expensePads?.standard ?? 0.20          // 20% standard pad
+  flat.PAD_HARSH      = RES.expensePads?.harsh ?? 0.33             // 33% harsh pad
+
+  // Residential MAO (maximum allowable offer) = ARV × factor - rehab
+  flat.MAO_FACTOR     = RES.arvMultiplier || 0.70                  // 70% of ARV for cash offer
+
+  // Residential hard mode and ARV calculations
+  flat.CLOSING_RESI   = 2000                                       // Residential closing costs
+  flat.RATE_OWNER     = 0.08                                       // Owner equity rate (8%)
+  flat.ARV_MIN_COMPS  = 3                                          // Minimum 3 comps for ARV confidence
+  flat.ARV_PERCENTILE = GLOB.arvPercentile || 0.40                 // 40th percentile of comp range
+
+  // Kicker and sunset projections (seller note enhancements)
+  flat.WINDOW_YEARS   = 5                                          // Projection window for kicker (5 years)
+  flat.KICKER_DEFAULT = 0.05                                       // Default kicker rate (5% per year)
 
   return flat
 }
