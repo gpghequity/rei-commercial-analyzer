@@ -1175,26 +1175,27 @@ export default function AnalyzeDealTab({ sharedUrlState, deepUrlState }) {
               const area = num(fields.sqft) || 0
 
               // National benchmark: PER-LINE-ITEM
-              // Each system shows user's condition + national cost for THAT condition
+              // Use actual national $/sqft rates from Remodeling Magazine for the condition selected
               const breakdown = detail?.breakdown || [];
+              const area = num(fields.sqft) || 0;
+
               const lineItemNationals = breakdown.map(item => {
-                if (!item.condition) return { ...item, nationalCost: null };
+                if (!item.condition || area <= 0) return { ...item, nationalCost: null };
 
-                // Map condition text to tier (roof: 'good' → 'light', 'medium', 'bad' → 'heavy')
-                const tier = item.condition?.toLowerCase().includes('good') || item.condition?.toLowerCase().includes('like-new')
-                  ? 'light_rehab'
-                  : item.condition?.toLowerCase().includes('bad') || item.condition?.toLowerCase().includes('heavy')
-                  ? 'heavy_rehab'
-                  : 'medium_rehab';
+                // Map condition text to tier using toBenchmarkTier logic
+                const condLower = item.condition?.toLowerCase() || '';
+                let tier = 'medium_rehab'; // default
+                if (condLower.includes('good') || condLower.includes('like') || condLower.includes('new') || condLower.includes('light')) {
+                  tier = 'light_rehab';
+                } else if (condLower.includes('bad') || condLower.includes('heavy') || condLower.includes('old')) {
+                  tier = 'heavy_rehab';
+                }
 
-                // National cost for this system at this tier
-                // Systems have different $/unit rates (roof $/sqft, kitchen $/sqft, etc.)
-                // Simplified: use medium baseline adjusted by tier
-                const baseCost = item.total || 0;
-                const tierMultiplier = tier === 'light_rehab' ? 0.7 : tier === 'heavy_rehab' ? 1.5 : 1.0;
-                const nationalCost = Math.round(baseCost / (tierMultiplier === 1.0 ? 1 : tierMultiplier)) || 0;
+                // Use actual national $/sqft from Remodeling Magazine benchmarks
+                const nationalPsfRate = NATIONAL_PSF[tier] || NATIONAL_PSF.medium_rehab;
+                const nationalCost = Math.round(area * nationalPsfRate * REGIONAL_ADJ);
 
-                return { ...item, nationalCost, tier };
+                return { ...item, nationalCost, tier, nationalPsfRate };
               });
 
               // National summary total
