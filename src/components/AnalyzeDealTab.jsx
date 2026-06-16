@@ -339,11 +339,14 @@ function RehabEmbed({ mode, address, sqft, units, onResult }) {
   useEffect(() => {
     function onMsg(e) {
       const d = e.data
+      console.log('[Rehab] Message received:', d?.type, d)
       if (!d || d.type !== 'rei-rehab-total') return
+      console.log('[Rehab] Processing rehab total:', d.totalRehab)
       const breakdown = (d.lineItems || []).map(li => ({ id: li.id, label: li.label, condition: '', total: li.total }))
       onResult?.(Number(d.totalRehab) || 0, { breakdown, holdingCost: d.holdingCost, grandTotal: d.grandTotal, flatOverride: d.flatOverride })
     }
     window.addEventListener('message', onMsg)
+    console.log('[Rehab] Listener attached')
     return () => window.removeEventListener('message', onMsg)
   }, [onResult])
   const btn = { padding: '8px 14px', fontSize: 13, fontWeight: 700, borderRadius: 6, border: '1px solid #0A0F2C', background: '#0A0F2C', color: '#C9A84C', cursor: 'pointer' }
