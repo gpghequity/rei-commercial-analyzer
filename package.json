@@ -1,9 +1,9 @@
 {
-  "name": "rei-baby-analyzer",
+  "name": "rei-commercial-analyzer",
   "private": true,
   "version": "0.0.1",
   "type": "module",
-  "description": "Operator-grade pre-LOI deal analyzer. Standalone repo — no code dependencies on any other rei-* tool. Math Bible v3 ported (Storage / Residential / Kicker / Sunset Test / Ramp Test). Fast Calc V2.6 MHP ported. Commercial module scaffolded.",
+  "description": "Commercial property analyzer (retail, office, warehouse). Reads live Math Bible. Calls external tools: doc extractor, photo analyzer, data enrichment, market risk engine.",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
